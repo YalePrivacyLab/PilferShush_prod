@@ -17,7 +17,7 @@ If an app on your phone has recording permissions, it may be using the microphon
   * s5 7.1.2 (25) - updated test
 
 ## TODO
-* Unravel the bufferscan/magnitude scan to enable proper write to file [Issue #1](https://github.com/YalePrivacyLab/PilferShush_prod/issues/1)
+* Unravel the bufferscan/magnitude scan to enable proper write to file ([Issue #1](https://github.com/YalePrivacyLab/PilferShush_prod/issues/1))
 
 # Design
 [The Critical Engineering Manifesto](https://criticalengineering.org/) provides the methodological framework for all technological interactions.
