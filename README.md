@@ -26,7 +26,7 @@ If an app on your phone has recording permissions, it may be using the microphon
 [Yale Privacy Lab](https://privacylab.yale.edu) explores the connection between privacy, security, and anonymity through hands-on software and hardware implementation. Yale Privacy Lab is an initiative of the [Information Society Project](https://www.law.yale.edu/isp) at Yale Law School.
 
 # Author
-[Kaputnik Go](https://github.com/kaputnikGo) (Matt Adair) received 1st Class Honours from RMIT University (Melbourne, Australia) with a research thesis titled: "Knowing and Not Knowing: The Problem of Privacy in an Internet-of-Things World."
+[Kaputnik Go](https://github.com/kaputnikGo) received 1st Class Honours from RMIT University (Melbourne, Australia) with a research thesis titled: "Knowing and Not Knowing: The Problem of Privacy in an Internet-of-Things World."
 
 # License
-Copyright Kaputnik Go (Matt Adair), released under the [GNU General Public License version 3 or later](https://www.gnu.org/licenses/gpl-3.0.en.html).
+Copyright Kaputnik Go, released under the [GNU General Public License version 3 or later](https://www.gnu.org/licenses/gpl-3.0.en.html).
