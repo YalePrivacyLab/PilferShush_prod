@@ -20,8 +20,6 @@ testing devices
 * HIGH : s5 G900P (user) 7.1.2 (25)(LineageOS 14.1, F-Droid)
 
 ## TODO
-* Unravel the bufferscan/magnitude scan to enable proper write to file ([Issue #1](https://github.com/YalePrivacyLab/PilferShush_prod/issues/1))
-* WAV file proper
 * USB Audio routing test
 * build for API 26, 8.x, 'O' and up features
 
