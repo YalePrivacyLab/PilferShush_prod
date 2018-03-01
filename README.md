@@ -34,3 +34,20 @@ testing devices
 
 # License
 Copyright Kaputnik Go, released under the [GNU General Public License version 3 or later](https://www.gnu.org/licenses/gpl-3.0.en.html).
+
+Screenshots (as of 2.0.26)
+
+- App open
+<img src="https://github.com/YalePrivacyLab/PilferShush_prod/blob/master/images/app-open.jpg" height="612px" />
+
+- Detailed View
+<img src="https://github.com/YalePrivacyLab/PilferShush_prod/blob/master/images/detailed-view.jpg" height="612px" />
+
+- Capture live
+<img src="https://github.com/YalePrivacyLab/PilferShush_prod/blob/master/images/capture-live.jpg" height="612px" />
+
+- Post capture
+<img src="https://github.com/YalePrivacyLab/PilferShush_prod/blob/master/images/post_capture.jpg" height="612px" />
+
+- Option menu
+<img src="https://github.com/YalePrivacyLab/PilferShush_prod/blob/master/images/option-menu.jpg" height="612px" />
