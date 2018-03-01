@@ -1,71 +1,105 @@
 package pilfershush.cityfreqs.com.pilfershush.assist;
 
 
+import android.content.Context;
 import android.os.Environment;
 
 import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.channels.FileChannel;
+import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
 import pilfershush.cityfreqs.com.pilfershush.MainActivity;
+import pilfershush.cityfreqs.com.pilfershush.R;
 
 public class WriteProcessor {
-    // until we bother with wav headers, this is raw format buffer writes
     // pcm savefile for raw import into Audacity as 48 kHz, signed 16 bit, big-endian, mono
+
     // wav has a little-endian
+
+    // laborious process to export files from Download(s) folder to PC, need Music folder or similar
+    // with proper file read access for external - possibly just a samsung pita
+
+    private Context context;
+    private AudioSettings audioSettings;
 
     private File extDirectory;
 
     private String audioFilename;
+    private String waveFilename;
     private String logFilename;
     private String sessionFilename;
+    private static boolean writeWav;
 
     public static File AUDIO_OUTPUT_FILE;
-    public static DataOutputStream AUDIO_DATA_STREAM;
+    public static File WAV_OUTPUT_FILE;
+
     public static BufferedOutputStream AUDIO_OUTPUT_STREAM;
+    public static DataOutputStream AUDIO_RAW_STREAM;
 
     public static File LOG_OUTPUT_FILE;
     public static FileOutputStream LOG_OUTPUT_STREAM;
     public static OutputStreamWriter LOG_OUTPUT_WRITER;
 
     private static final String APP_DIRECTORY_NAME = "PilferShush";
-    private static final String AUDIO_FILE_EXTENSION = ".pcm";
+    private static final String DEFAULT_SESSION_NAME = "capture";
+    private static final String AUDIO_FILE_EXTENSION_RAW = ".pcm";
+    private static final String AUDIO_FILE_EXTENSION_WAV = ".wav";
     private static final String LOG_FILE_EXTENSION = ".txt";
+
+    private static final long MINIMUM_STORAGE_SIZE_BYTES = 2048; // approx 2 mins pcm audio
+    private static final int INT_BYTES = Integer.SIZE / Byte.SIZE;
+    private static final int SHORT_BYTES = Short.SIZE / Byte.SIZE;
+
+    // diff OS can pattern the date in the following -
+    // underscore: 20180122-12_37_29-capture
+    // nospace: 20180122-123729-capture
     private static final SimpleDateFormat TIMESTAMP_FORMAT = new SimpleDateFormat("yyyyMMdd-HH:mm:ss", Locale.ENGLISH);
 
-    public WriteProcessor(String sessionName) {
+    public WriteProcessor(Context context, String sessionName, AudioSettings audioSettings, boolean writeWav) {
+        this.context = context;
         setSessionName(sessionName);
+        this.audioSettings = audioSettings;
+        this.writeWav = writeWav;
 
-        log("Check: Download(s)/PilferShush/");
+        log(context.getString(R.string.writer_state_1));
         // checks for read/write state
         if (Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
             createDirectory();
-            log("ext dir: " + extDirectory.toString());
+            log(context.getString(R.string.writer_state_2) + "\n" + extDirectory.toString() + "\n");
+        }
+        else {
+            log(context.getString(R.string.writer_state_4));
         }
     }
 
     public void setSessionName(String sessionName) {
         if (sessionName == null || sessionName == "") {
-            sessionFilename = "capture";
+            sessionFilename = DEFAULT_SESSION_NAME;
         }
         else {
             sessionFilename = sessionName;
         }
     }
 
-    public int getStorageSize() {
-        return (int)calculateStorageSize();
+    public long getStorageSize() {
+        return calculateStorageSize();
+    }
+
+    public long getFreeStorageSpace() {
+        return calculateFreeStorageSpace();
     }
 
     public void deleteEmptyLogFiles() {
@@ -79,17 +113,24 @@ public class WriteProcessor {
         }
     }
 
+    public boolean cautionFreeSpace() {
+        if (calculateFreeStorageSpace() <= MINIMUM_STORAGE_SIZE_BYTES) {
+            return true;
+        }
+        return false;
+    }
+
     /**************************************************************/
     /*
         text logging
      */
-    public void prepareLogToFile() {
+    public boolean prepareLogToFile() {
         // need to build the filename AND path
-        log("prepare log file...");
+        log(context.getString(R.string.writer_state_3));
         File location = extDirectory;
         if (location == null) {
-            log("Error getting storage directory");
-            return;
+            log(context.getString(R.string.writer_state_4));
+            return false;
         }
         // add the extension and timestamp
         // eg: 20151218-10:14:32-capture.txt
@@ -99,14 +140,17 @@ public class WriteProcessor {
             LOG_OUTPUT_FILE.createNewFile();
             LOG_OUTPUT_STREAM = new FileOutputStream(LOG_OUTPUT_FILE, true);
             LOG_OUTPUT_WRITER = new OutputStreamWriter(LOG_OUTPUT_STREAM);
+            return true;
         }
         catch (FileNotFoundException ex) {
             ex.printStackTrace();
-            log("File not found error.");
+            log(context.getString(R.string.writer_state_5));
+            return false;
         }
         catch (IOException e) {
             e.printStackTrace();
-            log("Log file write error.");
+            log(context.getString(R.string.writer_state_6));
+            return false;
         }
     }
 
@@ -123,7 +167,7 @@ public class WriteProcessor {
 
     public void closeLogFile() {
         // final act, no more writes possible.
-        log("close log file.");
+        log(context.getString(R.string.writer_state_7));
         try {
             if (LOG_OUTPUT_WRITER != null) {
                 LOG_OUTPUT_WRITER.flush();
@@ -135,25 +179,30 @@ public class WriteProcessor {
             }
         }
         catch (IOException e) {
-            log("Error closing log output stream.");
+            log(context.getString(R.string.writer_state_8));
         }
     }
 
     /**************************************************************/
     /*
-        audio logging
+        audio logging init
      */
 
-    public void prepareWriteAudioFile() {
+    public boolean prepareWriteAudioFile() {
         // need to build the filename AND path
         File location = extDirectory;
         if (location == null) {
-            log("Error getting storage directory");
-            return;
+            log(context.getString(R.string.writer_state_4));
+            return false;
         }
         // add the extension and timestamp
-        // eg: 20151218-10:14:32-capture.pcm
-        audioFilename = getTimestamp() + "-" + sessionFilename + AUDIO_FILE_EXTENSION;
+        // eg: 20151218-10:14:32-capture.pcm(.wav)
+        audioFilename = getTimestamp() + "-" + sessionFilename + AUDIO_FILE_EXTENSION_RAW;
+        if (writeWav) {
+            waveFilename = getTimestamp() + "-" + sessionFilename + AUDIO_FILE_EXTENSION_WAV;
+
+        }
+
         // file save will overwrite unless new name is used...
         try {
             AUDIO_OUTPUT_FILE = new File(location, audioFilename);
@@ -162,34 +211,47 @@ public class WriteProcessor {
             }
             AUDIO_OUTPUT_STREAM = null;
             AUDIO_OUTPUT_STREAM = new BufferedOutputStream(new FileOutputStream(AUDIO_OUTPUT_FILE, false));
-            AUDIO_DATA_STREAM = new DataOutputStream(AUDIO_OUTPUT_STREAM);
+            AUDIO_RAW_STREAM = new DataOutputStream(AUDIO_OUTPUT_STREAM);
+
+            if (writeWav) {
+                WAV_OUTPUT_FILE = new File(location, waveFilename);
+                if (!WAV_OUTPUT_FILE.exists()) {
+                    WAV_OUTPUT_FILE.createNewFile();
+                }
+            }
+            return true;
         }
         catch (FileNotFoundException ex) {
             ex.printStackTrace();
-            log("File not found error.");
+            log(context.getString(R.string.writer_state_5));
+            return false;
         }
         catch (IOException e) {
             e.printStackTrace();
-            log("Audio write file error.");
+            log(context.getString(R.string.writer_state_9));
+            return false;
         }
     }
 
-    public static void writeAudioFile(short[] shortBuffer, int bufferRead) {
-        if (shortBuffer != null) {
-            try {
-                for (int i = 0; i < bufferRead; i++) {
-                    AUDIO_DATA_STREAM.writeShort(shortBuffer[i]);
-                    /*
-                    ByteBuffer byteBuffer = ByteBuffer.allocate(Short.SIZE / Byte.SIZE);
-                    byteBuffer.order(ByteOrder.BIG_ENDIAN);
-                    byteBuffer.putShort(shortBuffer[i]);
-                    AUDIO_OUTPUT_STREAM.write(byteBuffer.array(), 0, byteBuffer.limit());
-                    */
+
+    /**************************************************************/
+    /*
+        audio logging writes
+     */
+    /********************************************************************/
+
+    public static void writeAudioFile(final short[] shortBuffer, final int bufferRead) {
+
+            if (shortBuffer != null && AUDIO_RAW_STREAM != null) {
+                try {
+                    for (int i = 0; i < bufferRead; i++) {
+                        AUDIO_RAW_STREAM.writeShort(shortBuffer[i]);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
             }
-        }
+
     }
 
     public void closeWriteFile() {
@@ -197,133 +259,134 @@ public class WriteProcessor {
             if (AUDIO_OUTPUT_STREAM != null) {
                 AUDIO_OUTPUT_STREAM.flush();
                 AUDIO_OUTPUT_STREAM.close();
-                AUDIO_DATA_STREAM.close();
+                AUDIO_RAW_STREAM.close();
             }
         }
         catch (IOException e) {
             e.printStackTrace();
-            log("onCancelled write stream close error.");
+            log(context.getString(R.string.writer_state_10));
         }
         // then close text logging
         closeLogFile();
     }
 
-    /**************************************************************/
-    //TODO
-    /*
-        wav + header logging
-     */
-
-    public static void initAudioBuffer(short channels, int sampleRate, short bitDepth) {
-        try {
-            writeWavHeader(AUDIO_OUTPUT_STREAM, channels, sampleRate, bitDepth);
-        }
-        catch (IOException ex) {
-            //
-        }
-    }
-
-    public static void writeAudioBuffer(short[] bufferIn, int length) {
-        // too much overhead?
-        int short_index, byte_index;
-        int iterations = length;
-        byte [] buffer = new byte[length * 2];
-        short_index = byte_index = 0;
-
-        for( ; short_index != iterations ; ) {
-            buffer[byte_index]     = (byte) (bufferIn[short_index] & 0x00FF);
-            buffer[byte_index + 1] = (byte) ((bufferIn[short_index] & 0xFF00) >> 8);
-            ++short_index; byte_index += 2;
-        }
-
-        try {
-            AUDIO_OUTPUT_STREAM.write(buffer, 0, length);
-        }
-        catch (IOException ex) {
-            //
-        }
-    }
-
-    public static void closeWriteBuffer() {
-        try {
-            updateWavHeader();
-        }
-        catch (IOException ex) {
-            //
-        }
-    }
-
-    private static void writeWavHeader(OutputStream out, short channels, int sampleRate, short bitDepth) throws IOException {
-        // Convert the multi-byte integers to raw bytes in little endian format as required by the spec
-        byte[] littleBytes = ByteBuffer
-                .allocate(14)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .putShort(channels)
-                .putInt(sampleRate)
-                .putInt(sampleRate * channels * (bitDepth / 8))
-                .putShort((short) (channels * (bitDepth / 8)))
-                .putShort(bitDepth)
-                .array();
-
-        out.write(new byte[]{
-                // RIFF header
-                'R', 'I', 'F', 'F', // ChunkID
-                0, 0, 0, 0, // ChunkSize (must be updated later)
-                'W', 'A', 'V', 'E', // Format
-                // fmt subchunk
-                'f', 'm', 't', ' ', // Subchunk1ID
-                16, 0, 0, 0, // Subchunk1Size
-                1, 0, // AudioFormat
-                littleBytes[0], littleBytes[1], // NumChannels
-                littleBytes[2], littleBytes[3], littleBytes[4], littleBytes[5], // SampleRate
-                littleBytes[6], littleBytes[7], littleBytes[8], littleBytes[9], // ByteRate
-                littleBytes[10], littleBytes[11], // BlockAlign
-                littleBytes[12], littleBytes[13], // BitsPerSample
-                // data subchunk
-                'd', 'a', 't', 'a', // Subchunk2ID
-                0, 0, 0, 0, // Subchunk2Size (must be updated later)
-        });
-    }
-
-    private static void updateWavHeader() throws IOException {
-        //AUDIO_OUTPUT_FILE
-
-        byte[] sizes = ByteBuffer
-                .allocate(8)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                // There are probably a bunch of different/better ways to calculate
-                // these two given your circumstances. Cast should be safe since if the WAV is
-                // > 4 GB we've already made a terrible mistake.
-                .putInt((int) (AUDIO_OUTPUT_FILE.length() - 8)) // ChunkSize
-                .putInt((int) (AUDIO_OUTPUT_FILE.length() - 44)) // Subchunk2Size
-                .array();
-
-        RandomAccessFile accessWave = null;
-        //noinspection CaughtExceptionImmediatelyRethrown
-        try {
-            accessWave = new RandomAccessFile(AUDIO_OUTPUT_FILE, "rw");
-            // ChunkSize
-            accessWave.seek(4);
-            accessWave.write(sizes, 0, 4);
-
-            // Subchunk2Size
-            accessWave.seek(40);
-            accessWave.write(sizes, 4, 4);
-        }
-        catch (IOException ex) {
-            // Rethrow but we still close accessWave in our finally
-            throw ex;
-        }
-        finally {
-            if (accessWave != null) {
-                try {
-                    accessWave.close();
-                }
-                catch (IOException ex) {
-                    //
-                }
+    public void audioFileConvert() {
+        if (writeWav) {
+            if (convertToWav()) {
+                // TODO when finished, delete the raw pcm file
+                AUDIO_OUTPUT_FILE.delete();
+                log(context.getString(R.string.writer_state_21));
+            }
+            else {
+                // no file or error writing file,
+                // do not delete pcm
             }
         }
+    }
+
+    /**************************************************************/
+    /*
+        audio wav convert
+    */
+    private boolean convertToWav() {
+        // raw file is recent pcm save
+        if (!AUDIO_OUTPUT_FILE.exists()) {
+            log(context.getString(R.string.writer_state_11));
+            return false;
+        }
+        if (!WAV_OUTPUT_FILE.exists()) {
+            log(context.getString(R.string.writer_state_12));
+            return false;
+        }
+        // send to converter
+        try {
+            log(context.getString(R.string.writer_state_13));
+            rawToWave(AUDIO_OUTPUT_FILE, WAV_OUTPUT_FILE);
+
+        }
+        catch (IOException ex) {
+            //
+            log(context.getString(R.string.writer_state_14));
+            return false;
+        }
+        log(context.getString(R.string.writer_state_15) + waveFilename);
+        return true;
+    }
+
+    /****************************************************/
+    // pcm to wav post-record functions
+
+    private void rawToWave(final File rawFile, final File waveFile) throws IOException {
+        byte[] rawData = new byte[(int) rawFile.length()];
+        DataInputStream input = null;
+        try {
+            input = new DataInputStream(new FileInputStream(rawFile));
+            input.read(rawData);
+        }
+        finally {
+            if (input != null) {
+                input.close();
+            }
+        }
+
+        FileOutputStream output = null;
+        FileChannel fileChannel;
+
+        try {
+            output = new FileOutputStream(waveFile);
+            fileChannel = output.getChannel();
+            // WAVE header
+            writeString(fileChannel, "RIFF", ByteOrder.BIG_ENDIAN); // chunk id
+            writeInt(fileChannel, 36 + rawData.length, ByteOrder.LITTLE_ENDIAN); // chunk size
+            writeString(fileChannel, "WAVE", ByteOrder.BIG_ENDIAN); // format
+            writeString(fileChannel, "fmt ", ByteOrder.BIG_ENDIAN); // subchunk 1 id
+            writeInt(fileChannel, 16, ByteOrder.LITTLE_ENDIAN); // subchunk 1 size
+            writeShort(fileChannel, (short) 1, ByteOrder.LITTLE_ENDIAN); // audio format (1 = PCM)
+            writeShort(fileChannel, (short) 1, ByteOrder.LITTLE_ENDIAN); // number of channels
+            writeInt(fileChannel, audioSettings.getSampleRate(), ByteOrder.LITTLE_ENDIAN); // sample rate
+            writeInt(fileChannel, audioSettings.getSampleRate() * 2, ByteOrder.LITTLE_ENDIAN); // byte rate
+            writeShort(fileChannel, (short) 2, ByteOrder.LITTLE_ENDIAN); // block align
+            writeShort(fileChannel, (short) audioSettings.getBitDepth(), ByteOrder.LITTLE_ENDIAN); // bits per sample
+            writeString(fileChannel, "data", ByteOrder.BIG_ENDIAN); // subchunk 2 id
+            writeInt(fileChannel, rawData.length, ByteOrder.LITTLE_ENDIAN); // subchunk 2 size
+
+            short[] shorts = new short[rawData.length / 2];
+            ByteBuffer.wrap(rawData).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(shorts);
+            ByteBuffer bytes = ByteBuffer.allocate(shorts.length * 2);
+            for (short s : shorts) {
+                bytes.putShort(s);
+            }
+            output.write(bytes.array());
+        }
+        finally {
+            if (output != null) {
+                output.close();
+            }
+        }
+    }
+    private void writeInt(final FileChannel fc, final int value, ByteOrder order) throws IOException {
+        ByteBuffer bb = ByteBuffer.allocate(INT_BYTES);
+        bb.order(order);
+        bb.putInt(value);
+        bb.flip();
+        fc.write(bb);
+    }
+
+    private void writeShort(final FileChannel fc, final short value, ByteOrder order) throws IOException {
+        ByteBuffer bb = ByteBuffer.allocate(SHORT_BYTES);
+        bb.order(order);
+        bb.putShort(value);
+        bb.flip();
+        fc.write(bb);
+    }
+
+    private void writeString(final FileChannel fc, final String value, ByteOrder order) throws IOException {
+        byte[] cc = value.getBytes(Charset.defaultCharset());
+        ByteBuffer bb = ByteBuffer.allocate(cc.length);
+        bb.order(order);
+        bb.put(cc);
+        bb.flip();
+        fc.write(bb);
     }
 
     /**************************************************************/
@@ -340,11 +403,11 @@ public class WriteProcessor {
     private void deleteZeroSizeLogFiles() {
         // assume MainActivity has cautioned first.
         if (!extDirectory.exists()) {
-            log("No storage folder found.");
+            log(context.getString(R.string.writer_state_16));
             return;
         }
 
-        log("Deleting empty files...");
+        log(context.getString(R.string.writer_state_17));
         int counter = 0;
         for (File file : extDirectory.listFiles()) {
             if (file.isFile()) {
@@ -354,27 +417,28 @@ public class WriteProcessor {
                 }
             }
         }
-        log("Deleted " + counter + " empty file(s).");
+        log(context.getString(R.string.writer_state_18_1) + counter + context.getString(R.string.writer_state_18_2));
 
     }
 
     private void deleteAllStorageFiles() {
         // assume MainActivity has cautioned first.
         if (!extDirectory.exists()) {
-            log("No storage folder found.");
+            log(context.getString(R.string.writer_state_16));
             return;
         }
         String[] filesDelete = extDirectory.list();
-        log("Deleting " + filesDelete.length + " files from storage...");
+        log(context.getString(R.string.writer_state_18_1) + filesDelete.length + context.getString(R.string.writer_state_18_3));
         for (int i = 0; i < filesDelete.length; i++) {
             new File(extDirectory, filesDelete[i]).delete();
         }
-        log("Storage folder now empty.");
+        log(context.getString(R.string.writer_state_19));
     }
 
     private long calculateStorageSize() {
+        // returns long size in bytes
         if (!extDirectory.exists()) {
-            log("No storage folder found.");
+            log(context.getString(R.string.writer_state_16));
             return 0;
         }
         long length = 0;
@@ -383,8 +447,18 @@ public class WriteProcessor {
                 length += file.length();
             }
         }
-        log("Storage size: " + (int)length);
+        log(context.getString(R.string.writer_state_20) + (int)length);
         return length;
+    }
+
+    private long calculateFreeStorageSpace() {
+        // returns long size in bytes
+        if (!extDirectory.exists()) {
+            log(context.getString(R.string.writer_state_16));
+            return 0;
+        }
+        // getFreeSpace == unallocated
+        return extDirectory.getUsableSpace();
     }
 
     private String getTimestamp() {
@@ -393,8 +467,12 @@ public class WriteProcessor {
         return TIMESTAMP_FORMAT.format(new Date());
     }
 
-    private void log(String message) {
+    private static void log(String message) {
         MainActivity.logger(message);
+    }
+
+    private static void entrylogger(String message) {
+
     }
 }
 

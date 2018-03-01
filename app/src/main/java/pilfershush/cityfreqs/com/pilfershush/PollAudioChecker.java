@@ -1,9 +1,11 @@
 package pilfershush.cityfreqs.com.pilfershush;
 
+import android.content.Context;
 import android.media.AudioRecord;
 import android.os.Handler;
 
 public class PollAudioChecker {
+    private Context context;
     private AudioRecord audioRecord;
     private int sampleRate;
     private int bufferSize;
@@ -20,9 +22,11 @@ public class PollAudioChecker {
     private Handler handlerU;
     private boolean polling;
     private boolean detected;
+    protected boolean audioError;
 
 
-    public PollAudioChecker(int audioSource, int sampleRate, int channel, int encoding, int bufferSize) {
+    public PollAudioChecker(Context context, int audioSource, int sampleRate, int channel, int encoding, int bufferSize) {
+        this.context = context;
         // use the AudioChecker's info
         this.audioSource = audioSource;
         this.sampleRate = sampleRate;
@@ -34,6 +38,7 @@ public class PollAudioChecker {
 
         detected = false;
         polling = false;
+        audioError = false;
         handlerU = new Handler();
     }
 
@@ -51,12 +56,20 @@ public class PollAudioChecker {
             try {
                 audioRecord = new AudioRecord(audioSource, sampleRate, channel, encoding, bufferSize);
                 audioSessionId = audioRecord.getAudioSessionId();
-                MainActivity.logger("Setup for polling mic ready, id: " + audioSessionId);
+                // if returns a 0 then no new sessionId was generated
+                if (audioSessionId == 0) {
+                    MainActivity.entryLogger(context.getString(R.string.init_state_16), true);
+                    audioError = true;
+                }
+                else {
+                    MainActivity.logger(context.getString(R.string.polling_check_1) + audioSessionId);
+                }
+
                 setup = true;
             }
             catch (Exception ex) {
                 ex.printStackTrace();
-                MainActivity.logger("Polling mic in use...");
+                MainActivity.logger(context.getString(R.string.polling_check_2));
                 setup = false;
             }
         }
@@ -86,7 +99,7 @@ public class PollAudioChecker {
  *
  */
     private void startPolling() {
-        MainActivity.logger("Polling Runner call.");
+        MainActivity.logger(context.getString(R.string.polling_check_3));
         pollingRunner.run();
         polling = true;
     }
@@ -133,38 +146,38 @@ public class PollAudioChecker {
             // check for error on pre 6.x and 6.x API
             if(audioStatus == AudioRecord.ERROR_INVALID_OPERATION
                     || audioStatus == AudioRecord.STATE_UNINITIALIZED) {
-                MainActivity.logger("pollAudio error status: " + audioStatus);
+                MainActivity.logger(context.getString(R.string.polling_check_4) + audioStatus);
                 detected = true;
             }
         }
         catch(Exception e) {
-            MainActivity.logger("pollAudio exception on start.");
+            MainActivity.logger(context.getString(R.string.polling_check_5));
         }
         finally {
             try {
                 audioRecord.stop();
-                MainActivity.logger("polling Audio at " + runningDelay + "(ms), no error.");
+                MainActivity.logger(context.getString(R.string.polling_check_6_1) + runningDelay + context.getString(R.string.polling_check_6_2));
                 detected = false;
             }
             catch(Exception e){
-                MainActivity.logger("pollAudio exception on stop.");
+                MainActivity.logger(context.getString(R.string.polling_check_7));
             }
         }
     }
 
     private void stopPollAudio() {
         // ensure we don't keep resources
-        MainActivity.logger("stop Poll Audio called.");
+        MainActivity.logger(context.getString(R.string.polling_check_8));
         if (audioRecord != null) {
             // check if recording first
             if (audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
                 audioRecord.stop();
             }
             audioRecord.release();
-            MainActivity.logger("Poll Audio stop and release.");
+            MainActivity.logger(context.getString(R.string.polling_check_9));
         }
         else {
-            MainActivity.logger("audioRecord is null.");
+            MainActivity.logger(context.getString(R.string.polling_check_10));
         }
     }
 

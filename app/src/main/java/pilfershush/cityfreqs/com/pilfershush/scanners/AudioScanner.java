@@ -1,38 +1,33 @@
 package pilfershush.cityfreqs.com.pilfershush.scanners;
 
+import android.content.Context;
+
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Map.Entry;
 
 import pilfershush.cityfreqs.com.pilfershush.MainActivity;
+import pilfershush.cityfreqs.com.pilfershush.R;
 import pilfershush.cityfreqs.com.pilfershush.assist.AudioSettings;
 import pilfershush.cityfreqs.com.pilfershush.scanners.FreqDetector.RecordTaskListener;
 
 public class AudioScanner {
+    private Context context;
     private FreqDetector freqDetector;
     private ProcessAudio processAudio;
     private AudioSettings audioSettings;
     public boolean audioDetected;
     private int freqStep;
-    //private double magnitude;
 
     private ArrayList<Integer> frequencySequence;
     private ArrayList<Integer[]> bufferStorage;
-    private HashMap<Integer, Integer> freqMap;
-    private ArrayList<Map.Entry<Integer,Integer>> mapEntries;
-    private Entry<Integer, Integer> logicZero;
-    private Entry<Integer, Integer> logicOne;
 
-    public AudioScanner(AudioSettings audioSettings) {
+    public AudioScanner(Context context, AudioSettings audioSettings) {
+        this.context = context;
         this.audioSettings = audioSettings;
         freqStep = AudioSettings.DEFAULT_FREQ_STEP;
 
         freqDetector = new FreqDetector(this.audioSettings);
         freqDetector.init(freqStep, AudioSettings.DEFAULT_MAGNITUDE);
-        processAudio = new ProcessAudio();
+        processAudio = new ProcessAudio(context);
         resetAudioScanner();
     }
 
@@ -40,17 +35,6 @@ public class AudioScanner {
         frequencySequence = new ArrayList<Integer>();
         bufferStorage = new ArrayList<Integer[]>();
         audioDetected = false;
-    }
-
-    public void setFreqStep(int freqStep) {
-        if (freqStep > AudioSettings.MIN_FREQ_STEP ||
-                freqStep < AudioSettings.MAX_FREQ_STEP) {
-            this.freqStep = freqStep;
-        }
-        else {
-            // is a default...
-            this.freqStep = AudioSettings.DEFAULT_FREQ_STEP;
-        }
     }
 
     public void setMinMagnitude(double magnitude) {
@@ -67,7 +51,7 @@ public class AudioScanner {
             }
 
             public void onFailure(String paramString) {
-                MainActivity.logger("AudioScanner run failed: " + paramString);
+                MainActivity.logger(context.getString(R.string.audio_scan_2) + paramString);
             }
         });
     }
@@ -79,9 +63,10 @@ public class AudioScanner {
                 bufferStorage = freqDetector.getBufferStorage();
             }
             freqDetector.stopRecording();
+            freqDetector.cleanup();
         }
         catch (Exception ex) {
-            MainActivity.logger("Stop AudioScanner failed.");
+            MainActivity.logger(context.getString(R.string.audio_scan_3));
         }
     }
 
@@ -101,83 +86,21 @@ public class AudioScanner {
             return 0;
     }
 
-    //TODO
-    // secondary scans using the bufferStorage, ideally looking for binMods.
-    public boolean runBufferScanner() {
-        //
-        return freqDetector.runBufferScanner(frequencySequence);
-    }
-
-    public void storeBufferScanMap() {
-        freqMap = freqDetector.getFrequencyCountMap();
-    }
-
-    public void stopBufferScanner() {
-        // this will null RecordTask
-        freqDetector.stopRecording();
-        freqDetector.cleanup();
-        resetAudioScanner();
-    }
-
-    // this can take time...
-    public boolean processBufferScanMap() {
-        if (freqMap != null) {
-            if (freqMap.size() > 0 ) {
-                // sort into list with highest values order
-                mapEntries = new ArrayList<Map.Entry<Integer,Integer>>(freqMap.entrySet());
-
-                Collections.sort(mapEntries, new Comparator<Entry<Integer, Integer>>() {
-                    public int compare(Map.Entry<Integer, Integer> a, Map.Entry<Integer, Integer> b) {
-                        return b.getValue().compareTo(a.getValue());
-                    }
-                });
-
-                // top 2 entries are of interest?
-                if (mapEntries != null && !mapEntries.isEmpty()) {
-                    // we need at least two entries for this:
-                    if (mapEntries.get(0) != null) {
-                        logicZero = mapEntries.get(0);
-                        if (mapEntries.size() >= 2) {
-                            if (mapEntries.get(1) != null) {
-                                logicOne = mapEntries.get(1);
-                                return true;
-                            }
-                        }
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    public String getLogicEntries() {
-        String report = "";
-        if (logicZero != null) {
-            report = "Freq 0: " + logicZero.getKey() + " : " + logicZero.getValue();
-        }
-        else {
-            report = "Freq 0: not found";
-        }
-
-        if (logicOne != null) {
-            report += "\nFreq 1: " + logicOne.getKey() + " : " + logicOne.getValue();
-        }
-        else {
-            report += "\nFreq 1: not found";
-        }
-        return report;
-    }
-
     /********************************************************************/
 
     public boolean hasFrequencySequence() {
         return processAudio.hasFreqSequenceDuplicates(frequencySequence);
     }
 
+    public int getFrequencySequenceSize() {
+        if (frequencySequence != null) {
+            return frequencySequence.size();
+        }
+        return 0;
+    }
+
     public String getFrequencySequenceLogic() {
-        return "Found logic: \n" + processAudio.getLogicZero()
-                + "\n" + processAudio.getLogicOne() + "\n";
+        return  processAudio.getLogicZero() + "\n" + processAudio.getLogicOne() + "\n";
     }
 
     public String getFreqSeqLogicEntries() {
